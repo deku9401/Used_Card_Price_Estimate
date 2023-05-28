@@ -1,0 +1,492 @@
+import pandas as pd
+import joblib
+import warnings
+import numpy as np
+import pandas as pd
+import seaborn as sns
+from matplotlib import pyplot as plt
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, VotingClassifier
+from sklearn.model_selection import GridSearchCV, cross_validate, RandomizedSearchCV, validation_curve
+from sklearn.preprocessing import RobustScaler
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, roc_auc_score, confusion_matrix, classification_report, plot_roc_curve
+from sklearn.model_selection import train_test_split, cross_validate
+# !pip install catboost
+# !pip install lightgbm
+# !pip install xgboost
+from xgboost import XGBClassifier
+from lightgbm import LGBMClassifier
+from catboost import CatBoostClassifier
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+from xgboost import XGBClassifier
+from lightgbm import LGBMClassifier
+from catboost import CatBoostClassifier
+import pandas as pd
+import seaborn as sns
+from matplotlib import pyplot as plt
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, VotingClassifier, AdaBoostClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import cross_validate, GridSearchCV
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.svm import SVC
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.model_selection import train_test_split
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
+import  warnings
+warnings.simplefilter(action='ignore', category=FutureWarning)
+
+pd.set_option('display.max_columns', None)
+pd.set_option('display.width', 500)
+pd.set_option('display.expand_frame_repr', False)
+
+df=pd.read_csv("cars.csv")
+
+df_=df.copy()
+df.head()
+df_.head()
+
+### Veri Setide bakış ###
+def check_df(dataframe, head=5):
+    print("##################### Shape #####################")
+    print(dataframe.shape)
+    print("##################### Types #####################")
+    print(dataframe.dtypes)
+    print("##################### Head #####################")
+    print(dataframe.head(head))
+    print("##################### Tail #####################")
+    print(dataframe.tail(head))
+    print("##################### NA #####################")
+    print(dataframe.isnull().sum())
+    print("##################### Info #####################")
+    print(dataframe.info())
+    print("##################### Describe #####################")
+    print(dataframe.describe().T)
+
+check_df(df)
+
+
+def check_top_10(dataframe):
+    print('###### TOP 10 BRAND ######')
+    print(dataframe['manufacturer_name'].value_counts().head(10))
+    print("#################################")
+    print('###### TOP 10 MODEL ######')
+    print(dataframe['model_name'].value_counts().head(10))
+    print("#################################")
+    print('###### TOP 10 COLOR ######')
+    print(dataframe['color'].value_counts().head(10))
+    print("#################################")
+
+check_top_10(df)
+
+def check_techincal(dataframe):
+    print("##### Transmission Type #####")
+    print(dataframe["transmission"].value_counts())
+    print("#################################")
+    print("##### Engine Type #####")
+    print(dataframe["engine_fuel"].value_counts())
+    print("#################################")
+    print("##### Fuel Type #####")
+    print(dataframe["engine_type"].value_counts())
+    print("#################################")
+    print("##### Body Type #####")
+    print(dataframe["body_type"].value_counts())
+    print("#################################")
+    print("##### Top 10 Engine Capacity #####")
+    print(dataframe["engine_capacity"].value_counts().head(10))
+    print("#################################")
+
+
+check_techincal(df)
+
+##### Feature değerleri Binary çevirme #####
+
+feature_columns = [column_name for column_name in df if 'feature' in column_name]
+feature_columns
+
+df[feature_columns] =df[feature_columns].astype(int)
+df.head()
+
+#Eksik Değerlerin Doldurulması
+
+df.isnull().sum()
+def missing_values_table(dataframe, na_name=False):
+    na_columns = [col for col in dataframe.columns if dataframe[col].isnull().sum() > 0]
+    n_miss = dataframe[na_columns].isnull().sum().sort_values(ascending=False)
+    ratio = (dataframe[na_columns].isnull().sum() / dataframe.shape[0] * 100).sort_values(ascending=False)
+    missing_df = pd.concat([n_miss, np.round(ratio, 2)], axis=1, keys=['n_miss', 'ratio'])
+    print(missing_df, end="\n")
+    if na_name:
+        return na_columns
+
+na_columns = missing_values_table(df, na_name=True)
+
+for col in na_columns:
+    df.loc[df[col].isnull(), col] = df[col].median()
+##################################
+# NUMERİK VE KATEGORİK DEĞİŞKENLERİN YAKALANMASI
+##################################
+
+def grab_col_names(dataframe, cat_th=3, car_th=20):
+    """
+
+    Veri setindeki kategorik, numerik ve kategorik fakat kardinal değişkenlerin isimlerini verir.
+    Not: Kategorik değişkenlerin içerisine numerik görünümlü kategorik değişkenler de dahildir.
+
+    Parameters
+    ------
+        dataframe: dataframe
+                Değişken isimleri alınmak istenilen dataframe
+        cat_th: int, optional
+                numerik fakat kategorik olan değişkenler için sınıf eşik değeri
+        car_th: int, optional
+                kategorik fakat kardinal değişkenler için sınıf eşik değeri
+
+    Returns
+    ------
+        cat_cols: list
+                Kategorik değişken listesi
+        num_cols: list
+                Numerik değişken listesi
+        cat_but_car: list
+                Kategorik görünümlü kardinal değişken listesi
+
+    Examples
+    ------
+        import seaborn as sns
+        df = sns.load_dataset("iris")
+        print(grab_col_names(df))
+
+
+    Notes
+    ------
+        cat_cols + num_cols + cat_but_car = toplam değişken sayısı
+        num_but_cat cat_cols'un içerisinde.
+
+    """
+    # bize sayısal, kategorik ve kategorik görünümlü kardinal değişkenleri getirir.
+    # Çok sık kullanılır.
+    # Survived (0,1) mesela sayısal görünümlü kategorik değişkendir.
+    # Kategorik ama çok fazla sınıfa sahip değişkenler -> kardinal değişkenler.
+
+    # cat_th=10 bu kişisel bir bilgi 15 veya 8 de denebilirdi. Bussiness a göre değişir. 10 dan az ise sayısal görünümlü kategoriktir denebilir.
+    # car_th=20 bussiness a göre değişir. 20 den fazla sınıf varsa kardinaldir denir.
+
+    #-------------------------------
+
+    # 1. dataframe.columns ile, veri setindeki tüm değişkenlerin adlarını içeren bir liste elde edilir.
+    # 2. dataframe[col].dtypes == "O" ile, her bir değişkenin veri tipi string (object) mi diye kontrol edilir.
+    # 3. [col for col in dataframe.columns if dataframe[col].dtypes == "O"] ile, veri setindeki tüm değişkenler arasında
+    # sadece string (object) veri tipine sahip olanları filtreleyerek bir liste elde edilir.
+
+    # cat_cols, cat_but_car
+    cat_cols = [col for col in dataframe.columns if dataframe[col].dtypes == "O"]
+    num_but_cat = [col for col in dataframe.columns if dataframe[col].nunique() < cat_th and dataframe[col].dtypes != "O"] #tipi object değilse
+    cat_but_car = [col for col in dataframe.columns if dataframe[col].nunique() > car_th and dataframe[col].dtypes == "O"]
+    cat_cols = cat_cols + num_but_cat
+    cat_cols = [col for col in cat_cols if col not in cat_but_car]
+
+    # num_cols
+    num_cols = [col for col in dataframe.columns if dataframe[col].dtypes != "O"]
+    num_cols = [col for col in num_cols if col not in num_but_cat]
+
+    print(f"Observations: {dataframe.shape[0]}")
+    print(f"Variables: {dataframe.shape[1]}")
+    print(f'cat_cols: {len(cat_cols)}')
+    print(f'num_cols: {len(num_cols)}')
+    print(f'cat_but_car: {len(cat_but_car)}')
+    print(f'num_but_cat: {len(num_but_cat)}')
+
+    return cat_cols, num_cols, cat_but_car
+
+
+cat_cols, num_cols, cat_but_car = grab_col_names(df)
+
+cat_cols
+num_cols
+cat_but_car
+cat_cols.append(cat_but_car[0])
+cat_but_car.append(cat_cols[7])
+del cat_but_car[0]
+del cat_cols[7]
+
+
+
+def cat_summary(dataframe, col_name, plot=False):
+    print(pd.DataFrame({col_name: dataframe[col_name].value_counts(), # değişkenin ismi: değişkenin sınıflarının dağılımı
+                        "Ratio": 100 * dataframe[col_name].value_counts() / len(dataframe)})) #sınıflarının oranı
+    print("##########################################")
+    if plot:
+        sns.countplot(x=dataframe[col_name], data=dataframe)
+        plt.show()
+
+for col in cat_cols :
+    cat_summary(df_,col)
+
+def num_summary(dataframe, numerical_col, plot=False):
+    quantiles = [0.05, 0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99]
+    print(dataframe[numerical_col].describe(quantiles).T)
+
+    if plot:
+        dataframe[numerical_col].hist(bins=20)
+        plt.xlabel(numerical_col)
+        plt.title(numerical_col)
+        plt.show(block=True)
+
+for col in num_cols:
+    num_summary(df, col, plot=True)
+
+
+
+#### One-Hot Encoding İşlemi ####
+
+
+def one_hot_encoder(dataframe, categorical_cols, drop_first=False):
+    dataframe = pd.get_dummies(dataframe, columns=categorical_cols, drop_first=drop_first)
+    return dataframe
+
+df = one_hot_encoder(df, cat_cols, drop_first=True)
+
+df.head()
+
+df.shape
+
+
+df.isnull().sum()
+
+##################################
+# KORELASYON
+##################################
+
+# Korelasyon, olasılık kuramı ve istatistikte iki rassal değişken arasındaki doğrusal ilişkinin yönünü ve gücünü belirtir
+
+df_.corr()
+
+# Korelasyon Matrisi
+
+
+f, ax = plt.subplots(figsize=[18, 13])
+sns.heatmap(df_.corr(), annot=True, fmt=".2f", ax=ax, cmap="magma")
+ax.set_title("Correlation Matrix", fontsize=20)
+plt.show(block=True)
+
+
+#model kurma liner regresyon
+
+######################################################
+# Model & Prediction
+######################################################
+
+y = df["price_usd"]
+
+X = df.drop(["price_usd","model_name","number_of_photos","up_counter","duration_listed","location_region"], axis=1)
+from sklearn.linear_model import LinearRegression
+reg_model = LinearRegression().fit(X,y)
+
+intercept = reg_model.intercept_
+
+reg_model.intercept_
+
+reg_model.coef_
+df_.head()
+df.head()
+y_pred = reg_model.predict(X)
+
+from sklearn.metrics import mean_squared_error
+
+mean_squared_error(y, y_pred)
+
+y_pred_list = y_pred.tolist()
+
+df_pred = pd.DataFrame(y_pred, columns=['Prediction_Price'])  # hesaplanan değerleri Df olarak kayıt etme
+
+y_pred_list
+y_pred_list
+
+
+
+new_df = pd.concat([df_["price_usd"], df_pred["Prediction_Price"]], axis=1)  # price vs pre price
+
+new_df["price_usd"] = new_df["price_usd"].round(2)
+new_df["Prediction_Price"] = new_df["Prediction_Price"].round(2)
+new_df.head(50)
+new_df.tail(50)
+
+df_ = df_.join(df_pred["Prediction_Price"])   # verinin ilk halina pre price ekleme
+df_["Prediction_Price"] = df_["Prediction_Price"].round(2)
+
+check_df(df_)
+df_[df_["Prediction_Price"] < 0].count()
+
+df_.columns
+
+new_df
+
+##########################
+# Model l'ner
+
+##########################
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.20, random_state=1)
+
+y_test.shape
+y_train.shape
+
+y_test.head()
+y_train.head()
+
+reg_model = LinearRegression().fit(X_train, y_train)
+
+# sabit (b - bias)
+reg_model.intercept_
+#-701869.4430514271
+
+# coefficients (w - weights)
+reg_model.coef_
+
+
+##########################
+# Tahmin Başarısını Değerlendirme
+##########################
+
+# Train RMSE
+y_pred = reg_model.predict(X_train)
+np.sqrt(mean_squared_error(y_train, y_pred))
+# 3336,07
+
+# TRAIN RKARE
+reg_model.score(X_train, y_train)
+
+#0,74
+
+# Test RMSE
+y_pred = reg_model.predict(X_test)
+np.sqrt(mean_squared_error(y_test, y_pred))
+# 3394,94
+
+# Test RKARE
+reg_model.score(X_test, y_test)
+#0,72
+
+# 10 Katlı CV RMSE
+from sklearn.model_selection import cross_val_score
+
+np.mean(np.sqrt(-cross_val_score(reg_model,
+                                 X,
+                                 y,
+                                 cv=10,
+                                 scoring="neg_mean_squared_error")))
+
+# 3366,55
+
+
+# 5 Katlı CV RMSE
+np.mean(np.sqrt(-cross_val_score(reg_model,
+                                 X,
+                                 y,
+                                 cv=5,
+                                 scoring="neg_mean_squared_error")))
+# 3418,43
+
+
+
+########## FILTRELEME ################
+
+
+def check_car(dataframe, index) :
+    print("#### Technical Specifications ####")
+    print(dataframe.iloc[index])
+
+new_df.iloc[4]
+check_car(df_,4)
+new_df.head()
+
+
+
+# Marka Modele göre filtreleme #
+df_.to_csv('veri_seti.csv', index=False)
+data = pd.read_csv('veri_seti.csv')
+
+#Model Marka ismi girerek Fiyatları getirme
+
+manufacturer_name = input("Üretici adını girin: ")
+model_name = input("Model adını girin: ")
+
+filtered_data = data[(data['manufacturer_name'] == manufacturer_name) & (data['model_name'] == model_name)]
+
+if len(filtered_data) > 0:
+    print("Bulunan bilgiler:")
+    for index, row in filtered_data.iterrows():
+        print("Index: {}, Üretici: {}, Model: {}, '2. El Satış Fiyatı': {}, Year: {}, Transmission: {}".format(index, row['manufacturer_name'], row['model_name'], row['Prediction_Price'], row['year_produced'], row['transmission']))
+else:
+    print("Belirtilen üretici ve model için bilgi bulunamadı.")
+
+
+    # Grafik çıktısı
+    plt.figure(figsize=(15, 9))
+    plt.plot(filtered_data['year_produced'], filtered_data['Prediction_Price'], marker='X')
+    plt.xlabel('Year')
+    plt.ylabel('Prediction Price')
+    plt.title('Prediction Price vs Year')
+    plt.grid(True)
+    plt.show(block=True)
+else:
+print("Belirtilen üretici ve model için bilgi bulunamadı.")
+
+
+
+data.columns
+df_["manufacturer_name"].unique()
+df_["model_name"].unique()
+df_["model_name"].nunique()
+
+
+
+
+# manufacturer_name'e göre model_name sütununda benzersiz değerleri sayın
+model_count_by_manufacturer = df_.groupby('manufacturer_name')['model_name'].nunique()
+
+# manufacturer_name'e göre filtreleme yapın
+filtered_model_count = model_count_by_manufacturer[model_count_by_manufacturer > 10]
+
+# Her Markada Kaç model var
+for manufacturer in filtered_model_count.index:
+    print("Üretici: {}, Benzersiz Model Sayısı: {}".format(manufacturer, filtered_model_count[manufacturer]))
+
+
+
+#marka ismi
+
+manufacturer_name = "Nissan"
+
+# MArka üreticisine ait verileri filtreleyin
+filtered_data = df_[df_['manufacturer_name'] == manufacturer_name]
+
+#  modeline erişin
+model_names = filtered_data['model_name'].unique()
+
+# Girilen Markadaki Modeller
+for model in model_names:
+    print(model)
+
+
+
+df.shape
+def check_car(dataframe, index) :
+    print("#### Technical Specifications ####")
+    print(dataframe.iloc[index])
+
+new_df.iloc[24]
+check_car(df_,24)
+
+
+
+
+
+
